@@ -1,0 +1,84 @@
+<?php
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\LoginRequest;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class AuthenticatedSessionController extends Controller
+{
+    /**
+     * Display the login view.
+     */
+    public function create(): Response
+    {
+        return Inertia::render('Auth/Login', [
+            'canResetPassword' => Route::has('password.request'),
+            'status' => session('status'),
+            'error' => session('error'),
+        ]);
+    }
+
+    /**
+     * Handle an incoming authentication request.
+     */
+    public function store(LoginRequest $request): RedirectResponse
+    {
+
+        $request->authenticate();
+
+        $user = Auth::user();
+
+        if ($user->banned) {
+            // Log the user out immediately if banned
+            Auth::guard('web')->logout();
+
+            // Invalidate the session
+            $request->session()->invalidate();
+
+            // Regenerate the session token
+            $request->session()->regenerateToken();
+
+            // Redirect back to the login page with an error message
+            return redirect()->route('login')->withErrors(['email' => 'Your have been banned.']);
+        }
+
+        // Check if the user has verified their email
+        if (!$user->hasVerifiedEmail()) {
+            // Log the user out to avoid session persistence
+            Auth::guard('web')->logout();
+
+            // Invalidate the session and regenerate token
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            // Redirect to the verifyUser route
+            return redirect()->route('verifyUser')->withErrors(['email' => 'Please verify your email before continuing.']);
+        }
+
+        // Regenerate session and redirect to dashboard if not banned
+        $request->session()->regenerate();
+
+        return redirect()->intended(route('dashboard', absolute: false));
+    }
+
+    /**
+     * Destroy an authenticated session.
+     */
+    public function destroy(Request $request): RedirectResponse
+    {
+        Auth::guard('web')->logout();
+
+        $request->session()->invalidate();
+
+        $request->session()->regenerateToken();
+
+        return redirect('/');
+    }
+}
